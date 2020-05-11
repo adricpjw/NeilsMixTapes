@@ -273,7 +273,11 @@ class VoiceState:
                 # Try to get the next song within 5s
                 # If no song get be get, plays recommmendation
                 try:
-                    async with timeout(5):  # 5 seconds
+                    async with timeout(5):  # 5 
+                        check = len(self.songs)
+                        if self.lastplayed and not check:
+                            print('wewewewewewewewe')
+                            await self.get_rec()
                         self.current = await self.songs.get()
                 except asyncio.TimeoutError:
                     await self.get_rec()
