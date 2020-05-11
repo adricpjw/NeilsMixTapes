@@ -213,6 +213,7 @@ class VoiceState:
         self.voice = None
         self.next = asyncio.Event()
         self.songs = SongQueue()
+        self.lastplayed = None #save last source used
 
         self._loop = False
         self._volume = 0.5
@@ -244,7 +245,7 @@ class VoiceState:
         return self.voice and self.current
 
     async def get_rec(self):
-        url = self.current.source.url
+        url = self.lastplayed.url
         body = urllib.request.urlopen(url)
         soup = BeautifulSoup(body, from_encoding=body.info().get_param('charset'), features = 'html.parser')
         recommended_url = None
@@ -279,6 +280,7 @@ class VoiceState:
                     self.current = await self.songs.get()
 
             self.current.source.volume = self._volume
+            self.lastplayed = self.current.source
             self.voice.play(self.current.source, after=self.play_next_song)
             await self.current.source.channel.send(embed=self.current.create_embed())
 
@@ -542,7 +544,7 @@ class Music(commands.Cog):
                 raise commands.CommandError('Bot is already in a voice channel.')
 
 
-bot = commands.Bot('!', description='Yet another music bot.')
+bot = commands.Bot('!', description='Neil\'s fire mixtapes.')
 bot.add_cog(Music(bot))
 
 
