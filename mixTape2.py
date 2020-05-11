@@ -124,8 +124,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 raise YTDLError('Couldn\'t find anything that matches `{}`'.format(search))
 
         webpage_url = process_info['webpage_url']
-        return cls.url_source(ctx,webpage_url,loop)
-'''
         partial = functools.partial(cls.ytdl.extract_info, webpage_url, download=False)
         processed_info = await loop.run_in_executor(None, partial)
 
@@ -143,7 +141,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                     raise YTDLError('Couldn\'t retrieve any matches for `{}`'.format(webpage_url))
 
         return cls(ctx, discord.FFmpegPCMAudio(info['url'], **cls.FFMPEG_OPTIONS), data=info)
-'''
+
     @staticmethod
     def parse_duration(duration: int):
         minutes, seconds = divmod(duration, 60)
@@ -245,10 +243,10 @@ class VoiceState:
     def is_playing(self):
         return self.voice and self.current
 
-    def get_rec(self):
+    async def get_rec(self):
         url = self.current.source.url
         body = urllib.request.urlopen(url)
-        soup = BeautifulSoup(body, from_encoding=body.info().get_param('charset'))
+        soup = BeautifulSoup(body, from_encoding=body.info().get_param('charset'), features = 'html.parser')
         recommended_url = None
         for link in soup.find_all('a', href=True):
             if "/watch?" in link['href']:
@@ -277,7 +275,7 @@ class VoiceState:
                     async with timeout(5):  # 5 seconds
                         self.current = await self.songs.get()
                 except asyncio.TimeoutError:
-                    self.get_rec()
+                    await self.get_rec()
                     self.current = await self.songs.get()
 
             self.current.source.volume = self._volume
@@ -532,6 +530,11 @@ class Music(commands.Cog):
 
                 await ctx.voice_state.songs.put(song)
                 await ctx.send('Enqueued {}'.format(str(source)))
+    
+    @commands.command(name='shutdown')
+    async def _shutdown(self, ctx: commands.Context):
+        await self.bot.logout()
+
 
     @_join.before_invoke
     @_play.before_invoke
@@ -544,7 +547,7 @@ class Music(commands.Cog):
                 raise commands.CommandError('Bot is already in a voice channel.')
 
 
-bot = commands.Bot('music.', description='Yet another music bot.')
+bot = commands.Bot('!', description='Yet another music bot.')
 bot.add_cog(Music(bot))
 
 
