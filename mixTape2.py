@@ -12,6 +12,7 @@ from discord.ext import commands
 import urllib.request
 from bs4 import BeautifulSoup
 
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,7 +20,6 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 
 # Silence useless bug reports messages
 youtube_dl.utils.bug_reports_message = lambda: ''
-
 
 
 class VoiceError(Exception):
@@ -80,6 +80,28 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return '**{0.title}** by **{0.uploader}**'.format(self)
 
     @classmethod
+    async def url_source(cls, ctx: commands.Context, webpage_url: str, *, loop: asyncio.BaseEventLoop = None):
+        loop = loop or asyncio.get_event_loop()
+        
+        partial = functools.partial(cls.ytdl.extract_info, webpage_url, download=False)
+        processed_info = await loop.run_in_executor(None, partial)
+
+        if processed_info is None:
+            raise YTDLError('Couldn\'t fetch `{}`'.format(webpage_url))
+
+        if 'entries' not in processed_info:
+            info = processed_info
+        else:
+            info = None
+            while info is None:
+                try:
+                    info = processed_info['entries'].pop(0)
+                except IndexError:
+                    raise YTDLError('Couldn\'t retrieve any matches for `{}`'.format(webpage_url))
+
+        return cls(ctx, discord.FFmpegPCMAudio(info['url'], **cls.FFMPEG_OPTIONS), data=info)
+
+    @classmethod
     async def create_source(cls, ctx: commands.Context, search: str, *, loop: asyncio.BaseEventLoop = None):
         loop = loop or asyncio.get_event_loop()
 
@@ -102,6 +124,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 raise YTDLError('Couldn\'t find anything that matches `{}`'.format(search))
 
         webpage_url = process_info['webpage_url']
+        return cls.url_source(ctx,webpage_url,loop)
+'''
         partial = functools.partial(cls.ytdl.extract_info, webpage_url, download=False)
         processed_info = await loop.run_in_executor(None, partial)
 
@@ -119,7 +143,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
                     raise YTDLError('Couldn\'t retrieve any matches for `{}`'.format(webpage_url))
 
         return cls(ctx, discord.FFmpegPCMAudio(info['url'], **cls.FFMPEG_OPTIONS), data=info)
-
+'''
     @staticmethod
     def parse_duration(duration: int):
         minutes, seconds = divmod(duration, 60)
@@ -221,21 +245,40 @@ class VoiceState:
     def is_playing(self):
         return self.voice and self.current
 
+    def get_rec(self):
+        url = self.current.source.url
+        body = urllib.request.urlopen(url)
+        soup = BeautifulSoup(body, from_encoding=body.info().get_param('charset'))
+        recommended_url = None
+        for link in soup.find_all('a', href=True):
+            if "/watch?" in link['href']:
+                recommended_url = link['href']
+                break
+
+        async with ctx.typing():
+            try:
+                source = await YTDLSource.url_source(ctx,recommended_url,loop=self.bot.loop)
+            except YTDLError as e:
+                await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
+            else:
+                song = Song(source)
+                await ctx.voice_state.songs.put(song)
+                await ctx.send('Recommended Song Enqueued {}'.format(str(source)))
+
+
     async def audio_player_task(self):
         while True:
             self.next.clear()
 
             if not self.loop:
-                # Try to get the next song within 3 minutes.
-                # If no song will be added to the queue in time,
-                # the player will disconnect due to performance
-                # reasons.
+                # Try to get the next song within 5s
+                # If no song get be get, plays recommmendation
                 try:
-                    async with timeout(180):  # 3 minutes
+                    async with timeout(5):  # 5 seconds
                         self.current = await self.songs.get()
                 except asyncio.TimeoutError:
-                    self.bot.loop.create_task(self.stop())
-                    return
+                    self.get_rec()
+                    self.current = await self.songs.get()
 
             self.current.source.volume = self._volume
             self.voice.play(self.current.source, after=self.play_next_song)
