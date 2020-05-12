@@ -412,8 +412,8 @@ class Music(commands.Cog):
             ctx.voice_state.voice.resume()
             await ctx.message.add_reaction('⏯')
 
-    @commands.command(name='stop')
-    async def _stop(self, ctx: commands.Context):
+    @commands.command(name='clear')
+    async def _clear(self, ctx: commands.Context):
         """Stops playing song and clears the queue."""
 
         ctx.voice_state.songs.clear()
